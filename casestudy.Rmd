@@ -1,0 +1,341 @@
+---
+title: "Case Study"
+author: "Nisan Baysal"
+date: '2023-07-25'
+output: html_document
+---
+What this Case Study Includes
+
+* Go to [About the company](#company)
+* Go to [Questions we want to answer](#businessQuestions)
+* Go to [Business Task](#businessTask)
+* Go to [Dataset Description](#datasetDesc)
+* Go to [Dataset Exploration](#datasetExpl)
+* Go to [Data Cleaning](#dataCleaning)
+* Go to [Data Analysis](#dataAnalysis)
+  + [Daily activity intensities](#dailyActivityIntensities) 
+  + [Calorie Spending by Weekday](#calorieSpendingByWeekday)
+  + [Average Calories Spent Daily](#averageDailyCalories)
+  + [Calories Spent by Time of Day](#calorieSpentByTimeOfDay)
+  + [Sleep duration by Weekday](#sleepByDay)
+* Go to [Recommendations Based On analysis](#recommendations)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## About the company {#company}
+
+Bellabeat is a high-tech company founded in 2013 that manufactures health-focused smart products. The technology they developed a technology that collects data on people's sleep, stress and reproductive health. Since it's been founded Bellabeat has been gaining more customers and had opened offices around the world as well as making their products available both through their website and other online retailers. They have an active appearance online and also invest in exploring their customer preferences through customer data. Bellabeat has asked us to analyse smart device usage to gain insight into how customers are making use of their smart devices. They are asking us to make recommendations based on those insights and improve Bellabeats marketing strategy and then sales performance.
+
+
+## Business Questions {#businessQuestions}
+
+The questions we will aim to answer through our analysis are
+* What are some trends in smart device usage?
+* How could these trends apply to Bellabeat customers?
+* How could these trends help influence Bellabeat marketing strategy?
+
+
+## Business Task {#businessTask}
+
+Identify high-level content recommendations to improve Bellabeat's marketing strategy.
+
+
+## Dataset Description {#datasetDesc}
+
+The dataset we are exploring is the [FitBit Fitness Tracker Data](https://www.kaggle.com/datasets/arashnic/fitbit).This dataset was made availabe by [Mobius](https://www.kaggle.com/arashnic).It is a public domain dataset and contains data from the survey results of 30 Fitbit users. 
+
+
+Limitations of the dataset:
+
+As mentioned before tha dataset contains 30 fitbit users information, the small sample size may undermine the validity of our results.
+
+Another limitation is the lack of information on whether a demographic is overrepresented in the dataset. We don't have information on who Amazon Machanical Turk distributed the survey to or if a demographic is more likely to respond to this survey and agree for their information to be used. As we don't have personal information on the respondents we can't rule out the possibility of a representation bias.
+
+## Dataset Exploration {#datasetExpl}
+
+The dataset contained of 18 csv documents.
+Let's load them so we can explore them further.
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+```
+
+
+```{r}
+#csv_directory <- "/Users/nisanbaysal/Desktop/r_projects/Fitabase_data/"
+csv_directory <- "Fitabase_data/"
+
+csv_files <- list.files(path = csv_directory, pattern = "\\.csv$", full.names = TRUE)
+
+# Step 2: Loop through the CSV files, read them, and store in separate data frames
+for (csv_file in csv_files) {
+  # Extract the name part before the ".csv" extension
+  file_name <- tools::file_path_sans_ext(basename(csv_file))
+  # Read the CSV data and assign it to the data frame with the desired name
+  assign(file_name, read.csv(csv_file))
+}
+```
+```{r}
+str(dailyActivity_merged)
+print(unique(dailyActivity_merged$ActivityDate))
+date_counts <- dailyActivity_merged %>% count(ActivityDate)
+id_counts <- dailyActivity_merged %>% count(Id)
+```
+We can see that we have daily recorded, hourly recorded and minutely recorded datasets. There are 33 users. Having a quick look we can see that 4 users didn't record themselves regularly; 4057192912,2347167796,8253242879,3372868164. We will need to remove these subjects or replace their values with the average. Dome datasets like weightLogInfo don't have enough participants to draw conclusions from so I will disregard them.
+
+The daily activity merged contains information from the three other daily datasets(dailySteps_merged,dailyCalories_merged, dailyIntensities_merged) so we will be using that dataset.
+
+## Data Cleaning {#dataCleaning}
+
+
+```{r}
+#checking for missing values
+
+missing_values_dailyActivity <- colSums(is.na(dailyActivity_merged))
+missing_values_dailyIntensities <- colSums(is.na(dailyIntensities_merged))
+
+dailyActivity_cleaned<-dailyActivity_merged
+dailyIntensities_cleaned<-dailyIntensities_merged
+```
+
+
+```{r}
+#changing the date format into d/m/y
+dailyActivity_cleaned$ActivityDate <- mdy(dailyActivity_cleaned$ActivityDate)
+dailyActivity_cleaned <- dailyActivity_cleaned %>% 
+  mutate(ActivityDate = format(ActivityDate, "%d/%m/%Y"))
+
+dailyIntensities_cleaned$ActivityDay <- mdy(dailyIntensities_cleaned$ActivityDay)
+dailyIntensities_cleaned <- dailyIntensities_cleaned %>% 
+  mutate(ActivityDay = format(ActivityDay, "%d/%m/%Y"))
+```
+
+
+```{r}
+#changing participant id data type into char from number
+dailyActivity_cleaned$Id <-as.character(dailyActivity_cleaned$Id)
+dailyIntensities_cleaned$Id <-as.character(dailyIntensities_cleaned$Id)
+
+```
+
+Here I will assign numbers to each participant so we dont have to use the long participant ids in our visualisations.
+
+```{r}
+dailyActivity_cleaned <- dailyActivity_cleaned %>%
+  group_by(Id) %>%
+  mutate(Id2 = cur_group_id())
+dailyIntensities_cleaned <- dailyIntensities_cleaned %>%
+  group_by(Id) %>%
+  mutate(Id2 = cur_group_id())
+```
+
+
+```{r}
+#removing the participant that didn't participate enough
+dailyActivity_cleaned <- dailyActivity_cleaned %>%
+  filter(Id != 4057192912)
+
+dailyIntensities_cleaned <- dailyIntensities_cleaned %>%
+  filter(Id != 4057192912)
+```
+
+## Data Analysis {#dataAnalysis}
+
+### Daily Average activity intensities {#dailyActivityIntensities}
+
+I will start with the daily intensities dataset. Here we can get a general idea of how majority of the day goes sedentary. There's some lighly active minutes and very active minutes however we cannot see a lot of red(fairly active minutes)
+
+```{r}
+selected_columns <- dailyIntensities_cleaned[, c("Id2", "ActivityDay","SedentaryMinutes", "LightlyActiveMinutes", "FairlyActiveMinutes", "VeryActiveMinutes")]
+library(tidyr)
+reshaped_data <- gather(selected_columns, activity_type, activity_value, -c(Id2, ActivityDay))
+
+```
+```{r}
+dailyIntensities_cleaned
+ggplot(data = reshaped_data, aes(x = Id2, y = activity_value, color=activity_type)) +
+  geom_point()+
+  labs(x = "Participant", y = "Activity Minutes", title = "Comparison of Activity Minutes")+
+  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5),
+  axis.title = element_text(vjust = 0.5))
+```
+### Calorie Spending by Weekday {#calorieSpendingByWeekday}
+
+
+Let's use the daily activity dataset and add the weekdays so we can analyse calorie spending and weekday correlations.
+
+```{r}
+dailyActivity_cleaned$ActivityDate1 <- dmy(dailyActivity_cleaned$ActivityDate)
+
+# Add a new column for weekdays
+dailyActivity_cleaned$weekday <- weekdays(dailyActivity_cleaned$ActivityDate1)
+```
+```{r}
+weekday_steps <- dailyActivity_cleaned %>%
+  group_by(weekday) %>%
+  summarize(avg_steps = mean(TotalSteps))
+```
+
+```{r}
+dailyActivity_cleaned %>%
+  ggplot( aes(x=weekday, y=TotalSteps, fill=weekday)) +
+  geom_boxplot() +
+  geom_jitter(color="black", size=0.4, alpha=0.9)+
+  labs(title = "Steps Taken By Weekday", x = "weekday", y = "Steps")+
+  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5),
+  axis.title = element_text(vjust = 0.5))
+```
+
+We can see that people usually moved more on Saturdays and Tuesdays.
+
+### Average Calories Spent Daily {#averageDailyCalories}
+
+Lets also check the daily calories spent on average.
+```{r}
+ggplot(dailyActivity_cleaned, aes(x = Calories)) +
+  geom_histogram(binwidth = 10, fill = "steelblue", color = "black") +
+  labs(title = "Average Calories Spent Daily", x = "Calories Spent", y = "Frequency")+
+  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5),
+  axis.title = element_text(vjust = 0.5))
+```
+### Calories Spent by Time of Day {#calorieSpentByTimeOfDay}
+
+Let's take our hourly calories and steps dataset and see what time of the day people usually have spent calories.
+```{r}
+#parsing and extracting time of day
+hourlyCalories_merged$timeParsed<-mdy_hms(hourlyCalories_merged$ActivityHour)
+hourlyCalories_merged$time_of_day <- hour(hourlyCalories_merged$timeParsed)
+
+hourlySteps_merged$timeParsed<-mdy_hms(hourlySteps_merged$ActivityHour)
+hourlySteps_merged$time_of_day <- hour(hourlySteps_merged$timeParsed)
+```
+```{r}
+merged_df <- merge(hourlyCalories_merged, hourlySteps_merged, by = c("Id", "ActivityHour"))
+
+columnsToKeep <- merged_df[, c("Id", "ActivityHour","Calories", "StepTotal", "time_of_day.x")]
+```
+
+
+```{r}
+avg_calories <- columnsToKeep %>%
+  group_by(time_of_day.x) %>%
+  summarize(Average_Calories_Spent = mean(Calories))
+
+ggplot(avg_calories, aes(x = time_of_day.x)) +
+  geom_bar(aes(y = Average_Calories_Spent, fill = Average_Calories_Spent), stat = "identity", position = "dodge") +
+  labs(title = "Calories Spent By Time Of Day", x = "Time of Day", y = "Calorie Count") +
+  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5),
+  axis.title = element_text(vjust = 0.5))+
+  scale_x_continuous(breaks = 1:23, labels = 1:23)
+```
+
+
+```{r}
+avg_steps <- columnsToKeep %>%
+  group_by(time_of_day.x) %>%
+  summarize(Average_Steps_Taken = mean(StepTotal))
+
+ggplot(avg_steps, aes(x = time_of_day.x)) +
+  geom_bar(aes(y = Average_Steps_Taken, fill = Average_Steps_Taken), stat = "identity", position = "dodge") +
+  labs(title = "Average Steps Taken By Time Of Day", x = "Time of Day", y = "Steps Taken") +
+  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5),
+  axis.title = element_text(vjust = 0.5))+
+  scale_x_continuous(breaks = 1:23, labels = 1:23)
+```
+
+```{r}
+merged_df <- merge(hourlyCalories_merged, hourlySteps_merged, by = c("Id", "ActivityHour"))
+
+columnsToKeep <- merged_df[, c("Id", "ActivityHour","Calories", "StepTotal", "time_of_day.x")]
+ggplot(columnsToKeep, aes(x = Calories, y = StepTotal)) +
+  geom_point(color = "blue") +
+  labs(title = "Calories Spent and Steps Taken Correlation", x = "Calories", y = "Steps Taken")+
+  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5),
+  axis.title = element_text(vjust = 0.5))+
+  geom_smooth(method = "lm", se = FALSE, color = "red")
+
+```
+We can see that there's a correlation between the steps taken and calories spent. Our two barcharts also prove that there is a correlation. Both steps taken and calories spent seem to be the highest between 16:00-19:00. Which might be the time most people leave work/school and go to the gym or walk home or to their public transport.
+We can assume most of our participants wake up at early hours 6:00-8:00 and go to bed early as well.
+```{r}
+columnsToKeep$date_as_time <- mdy_hms(columnsToKeep$ActivityHour)
+# Add a new column for weekdays
+columnsToKeep$weekday <- weekdays(columnsToKeep$date_as_time)
+```
+```{r}
+df_avg <- columnsToKeep %>%
+  group_by(weekday, time_of_day.x) %>%
+  summarize(avg_calories_spent = mean(Calories))
+
+ggplot(df_avg, aes(x = time_of_day.x, y = avg_calories_spent, color = weekday)) +
+  geom_line() +
+  labs(title = "Average Calories Spent by Time of Day", x = "Time of Day", y = "Average Calories Spent") +
+  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5),
+  axis.title = element_text(vjust = 0.5))+
+  scale_x_continuous(breaks = seq(0, 23, by = 1)) +
+  scale_color_discrete(name = "Weekday")
+```
+We can see a big difference between other days and Saturday. We can see more calorie spending between 16:00-20:00 during the week and sundays however there is more calorie spanding around the noon on Saturdays. We can also see that our participants start their day later during the weekends. We can assume that our participants are working/studying during the week and rest on the weekends. This could mean retired people or freelance workers aren't the majority of this participant pool.
+
+
+### Sleep Durations By Day {#sleepByDay}
+
+To support this assumption let's look at out participants sleep data.
+```{r}
+sleepDay_merged$dayAsTime<-mdy_hms(sleepDay_merged$SleepDay)
+sleepDay_merged$weekday<- weekdays(sleepDay_merged$dayAsTime)
+sleepDay_merged$timeOfDay <- hour(sleepDay_merged$dayAsTime)
+
+
+sleep1 <- sleepDay_merged %>%
+  group_by(weekday) %>%
+  summarize(sleep_value = mean(TotalMinutesAsleep), timeinbed=mean(TotalTimeInBed))
+```
+```{r}
+
+sleep1$weekday <- factor(sleep1$weekday, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday","Sunday"))
+
+```
+
+
+```{r}
+ggplot(sleep1, aes(x = weekday, fill= weekday)) +
+  geom_bar(aes(y = sleep_value), stat = "identity", position = "dodge") +
+  geom_line(aes(y = timeinbed, group = 1, color = "Hours In Bed"), label = "Hours In Bed") +
+  labs(title = "Hours Slept vs Hours in Bed by Day", x = "Weekdays", y = "Hours Slept",fill = "Hours Slept", color = "Hours In Bed")+
+  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5),axis.title = element_text(vjust = 0.5))
+
+```
+There doesn't seem to be a big difference between hours slept and hours in bed by day. Let's look at the percentages to see if our participant's stayed in bed longer while not sleeping.
+```{r}
+percentagesleepinbed <-  sleep1 %>%
+  mutate(percentage_difference = ((timeinbed-sleep_value) / sleep_value) * 100)
+
+ggplot(percentagesleepinbed, aes(x = weekday)) +
+  geom_bar(aes(y = percentage_difference, fill=weekday), stat = "identity", position = "dodge") +
+  labs(title = "Percentage of hours stayed in bed while not sleeping", x = "Weekdays", y = "Percentage of Hours in Bed")+
+  theme(plot.title = element_text(hjust = 0.5, vjust = 0.5), axis.title = element_text(vjust = 0.5))
+```
+We can see that people sleep in mostly on the weekends and also tuesday and friday.
+
+
+## Recommendations Based on Analysis {#recommendations}
+
+Both the calories spent and steps taken suggest that our participants are most active between 16:00-20:00.
+Our participants were more active during the day on Saturdays than any other day. This was followed by high a wednesday evening activity rate. The other days shared a similar activity pattern with a rise from 6:00 and a peak during the evening. We could improve the weekday activity patterns by promoting staying active during the week or suggesting to take short walks during lunchbreaks. 
+
+The participants sleep schedule and active hours show that they are mostly people working/studying during the day and people who have weekends off.
+We can assume that retirees or pople not in the workforce aren't a big part of this participant pool. 
+Assuming this participant pool is an unbiased representation of our customerbase we could improve marketing strategies for the elderly.
+
+We can see that people usually stay in bed while not sleeping. This pattern is heightened on Sundays, which could suggest that people stay in bed in the mornings after waking up. We could improve the smart devices planning tools to help our customers make better use of their free time.
+
+
+### {#custom-id}
+```{r}
+
+```
